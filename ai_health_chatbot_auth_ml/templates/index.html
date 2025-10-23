@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Health Chatbot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        #chat-log { height: 350px; overflow-y: auto; padding: 10px; background: #f7f7f7; border-radius: 5px; display: flex; flex-direction: column; }
+        .message { max-width: 75%; padding: 10px 15px; margin: 5px 0; border-radius: 15px; word-wrap: break-word; }
+        .user-message { align-self: flex-end; background-color: #0d6efd; color: white; border-bottom-right-radius: 0; }
+        .bot-message { align-self: flex-start; background-color: #e9ecef; color: black; border-bottom-left-radius: 0; }
+        .typing-dots span { display: inline-block; width: 6px; height: 6px; margin: 0 2px; background-color: gray; border-radius: 50%; animation: blink 1.4s infinite both; }
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
+        #suggestions { position: absolute; background: white; border: 1px solid #ccc; border-radius: 5px; z-index: 1000; width: 100%; max-height: 150px; overflow-y: auto; }
+        #suggestions div { padding: 5px 10px; cursor: pointer; }
+        #suggestions div:hover { background-color: #0d6efd; color: white; }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-bold" href="#">AI Health Chatbot</a>
+        <div class="d-flex">
+            <span class="text-white me-3">Welcome, {{ user }}</span>
+            <a href="{{ url_for('logout') }}" class="btn btn-light btn-sm">Logout</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container my-4">
+    <h2 class="text-center mb-3">Capstone Project — ML/AI Health Assistant</h2>
+    <div class="row g-4">
+
+        <!-- Chat Card -->
+        <div class="col-md-6 position-relative">
+            <div class="card shadow-lg h-100">
+                <div class="card-header bg-success text-white">💬 Chat with AI</div>
+                <div class="card-body d-flex flex-column position-relative">
+                    <div id="chat-log"></div>
+                    <div class="input-group mt-2 position-relative">
+                        <input type="text" id="user-input" class="form-control" placeholder="Type your symptoms..." autocomplete="off">
+                        <button id="send" class="btn btn-success">Send</button>
+                        <button id="reset-chat" class="btn btn-danger">Reset</button>
+                    </div>
+                    <div id="suggestions"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Health Tips -->
+        <div class="col-md-3">
+            <div class="card shadow-lg h-100">
+                <div class="card-header bg-info text-white">💡 Today's Health Tips</div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        {% for t in tips %}
+                        <li class="list-group-item">{{ t }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Find Doctors -->
+        <div class="col-md-3">
+            <div class="card shadow-lg h-100">
+                <div class="card-header bg-primary text-white">🧑‍⚕️ Find Doctors</div>
+                <div class="card-body">
+                    <input type="text" id="doctor-query" class="form-control mb-2" placeholder="Search by name, specialty, or location">
+                    <div class="mb-2 d-flex gap-1">
+                        <select id="doctor-specialty" class="form-select">
+                            <option value="">All Specialties</option>
+                            <option value="General Physician">General Physician</option>
+                            <option value="Cardiologist">Cardiologist</option>
+                            <option value="Dermatologist">Dermatologist</option>
+                            <option value="Pediatrician">Pediatrician</option>
+                            <option value="Orthopedic">Orthopedic</option>
+                            <option value="ENT">ENT</option>
+                            <option value="Neurologist">Neurologist</option>
+                        </select>
+                        <select id="doctor-location" class="form-select">
+                            <option value="">All Locations</option>
+                            <option value="Raxaul">Raxaul</option>
+                            <option value="Patna">Patna</option>
+                            <option value="Gorakhpur">Gorakhpur</option>
+                            <option value="Mumbai">Mumbai</option>
+                            <option value="Delhi">Delhi</option>
+                            <option value="Bengaluru">Bengaluru</option>
+                            <option value="Chennai">Chennai</option>
+                            <option value="Kolkata">Kolkata</option>
+                        </select>
+                    </div>
+                    <ul id="doctor-results" class="list-group" style="display:none;"></ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Book Appointment -->
+        <div class="card shadow-lg mt-4">
+            <div class="card-header bg-warning">📅 Book Appointment (Demo)</div>
+            <div class="card-body row g-3">
+                <div class="col-md-3"><input type="text" id="pname" class="form-control" placeholder="Your Name"></div>
+                <div class="col-md-3"><input type="text" id="pdoctor" class="form-control" placeholder="Doctor Name"></div>
+                <div class="col-md-3"><input type="date" id="pdate" class="form-control"></div>
+                <div class="col-md-2"><input type="time" id="ptime" class="form-control"></div>
+                <div class="col-md-1 d-grid"><button id="book" class="btn btn-warning">Book</button></div>
+                <p id="book-result" class="mt-2 fw-bold text-success"></p>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Toast container -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100;">
+    <div id="booking-toast" class="toast align-items-center text-bg-primary border-0" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body" id="toast-message"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<footer class="text-center mt-4 mb-2 text-muted">Made for Capstone — AI Health Chatbot</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Chat elements
+    const chatLog = document.getElementById("chat-log");
+    const input = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send");
+    const resetBtn = document.getElementById("reset-chat");
+    const suggestionsDiv = document.getElementById("suggestions");
+
+    // Toast
+    const toastEl = document.getElementById("booking-toast");
+    const toastMessage = document.getElementById("toast-message");
+    const toast = new bootstrap.Toast(toastEl);
+
+    // Symptom suggestions
+    const symptomSuggestions = ["fever","headache","cough","cold","sore throat","nausea","vomiting","dizziness","fatigue","allergy","stomach pain","back pain","chest pain","diarrhea"];
+
+    function addMessage(sender, text){
+        const div = document.createElement("div");
+        div.classList.add("message", sender==="You"?"user-message":"bot-message");
+        div.innerHTML = text.replace(/\n/g, "<br>");
+        chatLog.appendChild(div);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function showTyping(){
+        const div = document.createElement("div");
+        div.id = "typing-indicator";
+        div.classList.add("bot-message");
+        div.innerHTML = `<div class="typing-dots"><span></span><span></span><span></span></div>`;
+        chatLog.appendChild(div);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function removeTyping(){ document.getElementById("typing-indicator")?.remove(); }
+
+    // Auto-suggestions
+    input.addEventListener("input", ()=>{
+        const query = input.value.toLowerCase();
+        suggestionsDiv.innerHTML = "";
+        if(!query) return;
+        symptomSuggestions.filter(s=>s.startsWith(query)).forEach(s=>{
+            const div = document.createElement("div");
+            div.textContent = s;
+            div.addEventListener("click", ()=>{input.value=s; suggestionsDiv.innerHTML="";});
+            suggestionsDiv.appendChild(div);
+        });
+    });
+
+    // Send message
+    async function sendMessage(){
+        const msg = input.value.trim();
+        if(!msg){ toastMessage.textContent="Please type a message!"; toast.show(); return; }
+        addMessage("You", msg); input.value=""; suggestionsDiv.innerHTML="";
+        showTyping();
+        try{
+            const res = await fetch("/chat",{method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({message:msg})});
+            const data = await res.json();
+            setTimeout(()=>{ removeTyping(); addMessage("Bot", data.reply || "No reply from AI"); }, 800+Math.random()*800);
+        } catch(e){ removeTyping(); addMessage("Bot","Error! Try again."); toastMessage.textContent="Failed to send message!"; toast.show(); }
+    }
+    sendBtn.addEventListener("click", sendMessage);
+    input.addEventListener("keypress", e=>{if(e.key==="Enter") sendMessage();});
+    resetBtn.addEventListener("click", async ()=>{ await fetch("/reset_chat",{method:"POST"}); chatLog.innerHTML=""; });
+
+    // ---------------- Doctor list (50+) ----------------
+    const allDoctors = [
+    { name: "Dr. Aakash Sharma", specialty: "General Physician", location: "Raxaul" },
+    { name: "Dr. Neha Verma", specialty: "Cardiologist", location: "Patna" },
+    { name: "Dr. Rohit Singh", specialty: "Dermatologist", location: "Gorakhpur" },
+    { name: "Dr. Priya Gupta", specialty: "Pediatrician", location: "Mumbai" },
+    { name: "Dr. Rajesh Kumar", specialty: "Orthopedic", location: "Delhi" },
+    { name: "Dr. Anjali Mehta", specialty: "ENT", location: "Bengaluru" },
+    { name: "Dr. Vikram Joshi", specialty: "Neurologist", location: "Chennai" },
+    { name: "Dr. Simran Kaur", specialty: "General Physician", location: "Kolkata" },
+    { name: "Dr. Arjun Patel", specialty: "Cardiologist", location: "Raxaul" },
+    { name: "Dr. Divya Rao", specialty: "Dermatologist", location: "Patna" },
+    { name: "Dr. Manish Kapoor", specialty: "Pediatrician", location: "Gorakhpur" },
+    { name: "Dr. Sneha Iyer", specialty: "Orthopedic", location: "Mumbai" },
+    { name: "Dr. Aditya Singh", specialty: "ENT", location: "Delhi" },
+    { name: "Dr. Meera Nair", specialty: "Neurologist", location: "Bengaluru" },
+    { name: "Dr. Karan Malhotra", specialty: "General Physician", location: "Chennai" },
+    { name: "Dr. Pooja Sharma", specialty: "Cardiologist", location: "Kolkata" },
+    { name: "Dr. Nitin Joshi", specialty: "Dermatologist", location: "Raxaul" },
+    { name: "Dr. Ritu Gupta", specialty: "Pediatrician", location: "Patna" },
+    { name: "Dr. Saurabh Verma", specialty: "Orthopedic", location: "Gorakhpur" },
+    { name: "Dr. Ananya Sen", specialty: "ENT", location: "Mumbai" },
+    { name: "Dr. Rohit Mehra", specialty: "Neurologist", location: "Delhi" },
+    { name: "Dr. Sneha Sharma", specialty: "General Physician", location: "Bengaluru" },
+    { name: "Dr. Kunal Jain", specialty: "Cardiologist", location: "Chennai" },
+    { name: "Dr. Swati Rao", specialty: "Dermatologist", location: "Kolkata" },
+    { name: "Dr. Pranav Kapoor", specialty: "Pediatrician", location: "Raxaul" },
+    { name: "Dr. Anika Malhotra", specialty: "Orthopedic", location: "Patna" },
+    { name: "Dr. Rajat Singh", specialty: "ENT", location: "Gorakhpur" },
+    { name: "Dr. Tanvi Sharma", specialty: "Neurologist", location: "Mumbai" },
+    { name: "Dr. Aman Verma", specialty: "General Physician", location: "Delhi" },
+    { name: "Dr. Priya Joshi", specialty: "Cardiologist", location: "Bengaluru" },
+    { name: "Dr. Rakesh Kumar", specialty: "Dermatologist", location: "Chennai" },
+    { name: "Dr. Nisha Singh", specialty: "Pediatrician", location: "Kolkata" },
+    { name: "Dr. Aditya Sharma", specialty: "Orthopedic", location: "Raxaul" },
+    { name: "Dr. Divya Mehta", specialty: "ENT", location: "Patna" },
+    { name: "Dr. Karan Verma", specialty: "Neurologist", location: "Gorakhpur" },
+    { name: "Dr. Ritu Kapoor", specialty: "General Physician", location: "Mumbai" },
+    { name: "Dr. Akash Jain", specialty: "Cardiologist", location: "Delhi" },
+    { name: "Dr. Meera Sharma", specialty: "Dermatologist", location: "Bengaluru" },
+    { name: "Dr. Saurabh Mehra", specialty: "Pediatrician", location: "Chennai" },
+    { name: "Dr. Ananya Verma", specialty: "Orthopedic", location: "Kolkata" },
+    { name: "Dr. Rohit Kapoor", specialty: "ENT", location: "Raxaul" },
+    { name: "Dr. Priya Singh", specialty: "Neurologist", location: "Patna" },
+    { name: "Dr. Manish Sharma", specialty: "General Physician", location: "Gorakhpur" },
+    { name: "Dr. Sneha Gupta", specialty: "Cardiologist", location: "Mumbai" },
+    { name: "Dr. Kunal Mehta", specialty: "Dermatologist", location: "Delhi" },
+    { name: "Dr. Tanvi Verma", specialty: "Pediatrician", location: "Bengaluru" },
+    { name: "Dr. Aman Sharma", specialty: "Orthopedic", location: "Chennai" },
+    { name: "Dr. Anika Singh", specialty: "ENT", location: "Kolkata" },
+    { name: "Dr. Rajat Malhotra", specialty: "Neurologist", location: "Raxaul" },
+    { name: "Dr. Swati Kapoor", specialty: "General Physician", location: "Patna" },
+    { name: "Dr. Pranav Sharma", specialty: "Cardiologist", location: "Gorakhpur" },
+    { name: "Dr. Nisha Mehta", specialty: "Dermatologist", location: "Mumbai" }
+];
+
+    // Doctor search/filter
+    const specialtySelect = document.getElementById("doctor-specialty");
+    const locationSelect = document.getElementById("doctor-location");
+    const doctorQueryInput = document.getElementById("doctor-query");
+    const doctorResults = document.getElementById("doctor-results");
+
+    function filterDoctors(){
+        const query = doctorQueryInput.value.toLowerCase().trim();
+        const specialty = specialtySelect.value;
+        const location = locationSelect.value;
+
+        doctorResults.innerHTML = "";
+
+        const filtered = allDoctors.filter(d=>{
+            const matchesQuery = d.name.toLowerCase().includes(query) || d.specialty.toLowerCase().includes(query) || d.location.toLowerCase().includes(query);
+            const matchesSpecialty = !specialty || d.specialty === specialty;
+            const matchesLocation = !location || d.location === location;
+            return matchesQuery && matchesSpecialty && matchesLocation;
+        });
+
+        if(filtered.length===0){
+            const li = document.createElement("li");
+            li.className="list-group-item text-muted";
+            li.textContent="No doctors found.";
+            doctorResults.appendChild(li);
+            doctorResults.style.display="block";
+            return;
+        }
+
+        filtered.forEach(d=>{
+            const li = document.createElement("li");
+            li.className="list-group-item d-flex justify-content-between align-items-center";
+            li.innerHTML=`${d.name} — ${d.specialty} (${d.location}) <button class="btn btn-sm btn-outline-success book-btn">Book</button>`;
+            li.querySelector(".book-btn").addEventListener("click", ()=>{ document.getElementById("pdoctor").value=d.name; document.getElementById("pname").focus(); });
+            doctorResults.appendChild(li);
+        });
+        doctorResults.style.display="block";
+    }
+
+    specialtySelect.addEventListener("change", filterDoctors);
+    locationSelect.addEventListener("change", filterDoctors);
+    doctorQueryInput.addEventListener("input", filterDoctors);
+
+    // Initial doctor list display
+    filterDoctors();
+
+    // Book appointment
+    document.getElementById("book").addEventListener("click", async ()=>{
+        const payload = {
+            name: document.getElementById("pname").value,
+            doctor: document.getElementById("pdoctor").value,
+            date: document.getElementById("pdate").value,
+            time: document.getElementById("ptime").value
+        };
+        if(!payload.name||!payload.doctor||!payload.date||!payload.time){ toastMessage.textContent="Please fill all booking fields!"; toast.show(); return; }
+        try{
+            const res = await fetch("/book",{method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
+            const data = await res.json();
+            document.getElementById("book-result").textContent=data.message||data.error||"Booking failed!";
+            toastMessage.textContent=data.message||data.error||"Booking completed!";
+            toast.show();
+        } catch(e){ toastMessage.textContent="Failed to book appointment!"; toast.show(); }
+    });
+
+});
+</script>
+</body>
+</html>
